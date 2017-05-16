@@ -100,38 +100,8 @@ public class RedisTest {
 			String threadName = "Thread:" + i;
 			int index = i;
 			tasks.add(() -> {
-				LockHistory history = new LockHistory();
-				history.setThreadName(threadName);
-				histories.add(history);
-				try{
-					SimpleDateFormat sdf = new SimpleDateFormat("K:mm:ss.SSS a");
-					RLock lock;
-					if(index == 1) {
-						lock = client.getReadWriteLock(lockName).writeLock();
-					} else {
-						Thread.sleep(1000);
-						lock = client.getReadWriteLock(lockName).readLock();
-					}
-					history.setAttemptTimestamp(new Date());
-					System.out.println(threadName + " Attempting to lock '" + lock.getName() + "'. @" + sdf.format(history.getAttemptTimestamp()));
-					
-					lock.lock();
-					history.setLockTimestamp(new Date());
-					System.out.println(threadName + " locked '" + lock.getName() + "'. @" + sdf.format(history.getLockTimestamp()));
-					if(index == 1) {
-						System.out.println("Write lock sleeping...");
-						Thread.sleep(11000);
-						System.out.println("Write lock awaked. Releasing lock");
-						lock.unlock();
-					} else {
-						Thread.sleep(5000);
-						lock.unlock();
-					}
-					history.setUnlockTimestamp(new Date());
-					System.out.println(threadName + " unlocked '" + lock.getName() + "'. @" + sdf.format(history.getUnlockTimestamp()));
-				}catch (Exception e) {
-					e.printStackTrace(System.out);
-				}
+				int writeThreadIndex = 5;
+				acquireLock(threadName, index, writeThreadIndex, lockName, histories);
 				return threadName;
 			});
 		}
@@ -139,8 +109,8 @@ public class RedisTest {
 		ExecutorService service = Executors.newFixedThreadPool(10);
 		service.invokeAll(tasks);
 		service.shutdown();
-		service.awaitTermination(10, TimeUnit.SECONDS);
-		
+		service.awaitTermination(Long.MAX_VALUE, TimeUnit.NANOSECONDS);
+
 		Collections.sort(histories, new Comparator<LockHistory>() {
 			@Override
 			public int compare(LockHistory o1, LockHistory o2) {
@@ -155,6 +125,40 @@ public class RedisTest {
 			System.out.println(history.getThreadName() + "\t" + sdf.format(history.getAttemptTimestamp()) + "\t"
 					+ sdf.format(history.getLockTimestamp()) + "\t" + sdf.format(history.getUnlockTimestamp()));
 		});
+	}
+	
+	private void acquireLock(String threadName, int index, int writeThreadIndex, String lockName, List<LockHistory> histories) {
+		LockHistory history = new LockHistory();
+		history.setThreadName(threadName);
+		histories.add(history);
+		try{
+			SimpleDateFormat sdf = new SimpleDateFormat("K:mm:ss.SSS a");
+			RLock lock;
+			if(index == writeThreadIndex) {
+				lock = client.getReadWriteLock(lockName).writeLock();
+			} else {
+				lock = client.getReadWriteLock(lockName).readLock();
+			}
+			history.setAttemptTimestamp(new Date());
+			System.out.println(threadName + " Attempting to lock '" + lock.getName() + "'. @" + sdf.format(history.getAttemptTimestamp()));
+			
+			lock.lock();
+			history.setLockTimestamp(new Date());
+			System.out.println(threadName + " locked '" + lock.getName() + "'. @" + sdf.format(history.getLockTimestamp()));
+			if(index == writeThreadIndex) {
+				System.out.println("Write lock sleeping...");
+				Thread.sleep(11000);
+				System.out.println("Write lock awaked. Releasing lock");
+				lock.unlock();
+			} else {
+				Thread.sleep(5000);
+				lock.unlock();
+			}
+			history.setUnlockTimestamp(new Date());
+			System.out.println(threadName + " unlocked '" + lock.getName() + "'. @" + sdf.format(history.getUnlockTimestamp()));
+		}catch (Exception e) {
+			e.printStackTrace(System.out);
+		}
 	}
 	
 	private void keys() {
